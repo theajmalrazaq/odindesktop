@@ -1,0 +1,31 @@
+name: Linux desktop
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 cmake ninja-build pkg-config libusb-1.0-0-dev libcrypto++-dev libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf
+      - run: npm ci
+      - run: cargo test --manifest-path scripts/core-tests/Cargo.toml --locked
+      - run: npm run engine:build
+        env:
+          CXX: g++-14
+          CC: gcc-14
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: npm run tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: odin-desktop-linux
+          path: src-tauri/target/release/bundle/deb/*.deb

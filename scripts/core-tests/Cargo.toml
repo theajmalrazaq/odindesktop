@@ -1,0 +1,9 @@
+[package]
+name = "odin-operation-tests"
+version = "0.1.0"
+edition = "2021"
+[lib]
+path = "../../src-tauri/src/operations.rs"
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"

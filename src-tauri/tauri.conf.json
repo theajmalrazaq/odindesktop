@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Odin Desktop",
+  "version": "0.1.0",
+  "identifier": "dev.odin.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Odin Desktop",
+        "width": 1280,
+        "height": 880,
+        "minWidth": 900,
+        "minHeight": 700
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb"
+    ],
+    "externalBin": [
+      "binaries/odin4"
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libusb-1.0-0",
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
+      }
+    },
+    "icon": [
+      "icons/icon.png"
+    ],
+    "resources": [
+      "binaries/ODIN4-LICENSE",
+      "binaries/ODIN4-NOTICE"
+    ]
+  }
+}
