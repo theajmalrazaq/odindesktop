@@ -1,0 +1,21 @@
+# Built from the same tested native executables as the Debian release.
+pkgname=odin-desktop-bin
+pkgver=0.1.1
+pkgrel=1
+pkgdesc='Samsung firmware flashing desktop application powered by Odin4'
+arch=('x86_64')
+url='https://github.com/theajmalrazaq/odinweb'
+license=('LicenseRef-Odin-Desktop' 'Apache-2.0')
+depends=('gtk3' 'webkit2gtk-4.1' 'libusb' 'glib2' 'libsoup3' 'hicolor-icon-theme')
+provides=('odin-desktop')
+conflicts=('odin-desktop')
+options=('!strip' '!debug')
+source=("odin-desktop_${pkgver}_amd64.deb::https://github.com/theajmalrazaq/odinweb/releases/download/v${pkgver}/odin-desktop_${pkgver}_amd64.deb")
+sha256sums=('RELEASE_DEB_SHA256')
+prepare() {
+  mkdir -p deb
+  bsdtar -xf "odin-desktop_${pkgver}_amd64.deb" -C deb
+}
+package() {
+  bsdtar -xf "$srcdir"/deb/data.tar.* -C "$pkgdir"
+}

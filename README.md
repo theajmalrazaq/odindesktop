@@ -1,83 +1,88 @@
 # Odin Desktop
 
-A Linux desktop firmware workspace built with **Tauri 2, React 19, TypeScript, and Rust**, wrapping [Llucs/odin4](https://github.com/Llucs/odin4). All USB communication and firmware processing happen locally. The browser build is an interface preview; it cannot access the native engine.
+A **Linux desktop application** for Samsung firmware flashing, built with Tauri 2, React, TypeScript and Rust around [Llucs/odin4](https://github.com/Llucs/odin4). Install it, open it from your application menu, and connect your phone by USB. The interface, firmware processing and USB operations all run on your computer.
 
-## What is implemented
+## Download and install
 
-- Native Download Mode device discovery and explicit device selection.
-- Native file dialogs for BL, AP, CP, CSC and UMS `.tar` / `.tar.md5` archives.
-- Odin4 `--check-only` validation against the connected device.
-- Flash confirmation and optional reboot after a successful operation.
-- Backend-enforced validation before flashing. SHA-256 fingerprints bind validation to the selected file contents, paths, slots and USB device path. Files are hashed again before flashing; a failed attempt invalidates the receipt. Do not modify files or swap devices during an operation. USB paths identify connections, not a phone's permanent identity.
-- One native engine operation at a time, streamed stdout/stderr, bounded visible logs and log export.
-- No shell execution of frontend input, arbitrary engine paths, EFS erase, forced repartitioning, or unknown-partition overrides.
+Download packages from [GitHub Releases](https://github.com/theajmalrazaq/odinweb/releases). The release pipeline publishes a prerelease only after native builds and packaged application checks pass. These first releases still need testing with real Samsung phones.
 
-**Status:** frontend production build, browser interaction checks and four Rust operation tests pass in the development container. Full Tauri compilation and native engine compilation require Linux development packages unavailable in this read-only container. No installer or real-device flashing has been verified. The GitHub workflow builds and uploads a `.deb` when run; it has not been run here. Linux is the only supported target; Windows/macOS support is not implied by Tauri's cross-platform shell.
+Packages currently target **x86_64** computers. ARM64 installers are not included.
 
-## Linux development
+| Distribution | Package | Install |
+| --- | --- | --- |
+| Ubuntu 24.04+, compatible Debian systems | `.deb` | `sudo apt install ./odin-desktop_0.1.1_amd64.deb` |
+| Arch Linux / compatible Arch derivatives | `.pkg.tar.zst` | `sudo pacman -U ./odin-desktop-bin-0.1.1-1-x86_64.pkg.tar.zst` |
+| Fedora / compatible RPM systems | `.rpm` | `sudo dnf install ./odin-desktop-0.1.1-1.x86_64.rpm` |
+| Other compatible Linux desktops | `.AppImage` | `chmod +x ./odin-desktop-0.1.1-x86_64.AppImage` then run the file |
 
-Use the existing checkout; each cloud task is already isolated and does not need a worktree.
+The binaries are built on Ubuntu 24.04 and require **glibc 2.39 or newer**. Native packages also need their distribution's GTK 3 and WebKitGTK 4.1 libraries. AppImage does not make older glibc versions compatible; some systems also need FUSE 2. RPM installation on every Fedora derivative is not independently verified. For older distributions, build from source on that system with GCC 14 or newer.
 
-On Ubuntu 24.04 (or equivalent packages on Debian 13):
+Verify the download using the release's `SHA256SUMS`. Native packages contain USB permissions rules. AppImage users should download `60-odin-desktop.rules` from the same release and install it:
+
+```sh
+sudo install -Dm644 60-odin-desktop.rules /etc/udev/rules.d/60-odin-desktop.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+After installing any package, reload udev rules and reconnect your phone. The rules grant access to the active local desktop session through `uaccess`; they do not require an Ubuntu-specific `plugdev` group. Run the application as your normal user.
+
+The Arch package is downloadable directly; it is not published to the AUR or official Arch repositories. The release includes a `PKGBUILD` with the actual Debian source-package checksum.
+
+## Using the application
+
+1. Back up your data and obtain firmware for the exact model and bootloader revision.
+2. Enter Samsung Download Mode, connect via USB and click **Scan devices**.
+3. Select the device and matching BL, AP, CP, CSC and/or UMS archives.
+4. Click **Validate firmware** and review the Odin4 log.
+5. Click **Start flashing**, review the confirmation and keep the cable connected until completion.
+
+Odin4 performs archive and partition checks. A successful validation is required before flashing, and SHA-256 fingerprints are checked again before writes. Do not change firmware files or swap devices during an operation: a USB path identifies a connection, not a permanent device identity. The application serializes operations and blocks ordinary window closure while an operation is running.
+
+Logs are shown in the application and can be exported. Native engine logs are stored in the application's platform log directory. The engine is bundled with the installer, so no separate Odin4 installation is needed.
+
+There is no mid-flash cancellation control. Incorrect firmware and interrupted flashing can erase data or make a phone unbootable. A `.tar.md5` checksum is an integrity check, not proof of authenticity. The GUI uses upstream Odin4's validation and protocol implementation; it does not independently guarantee firmware/model compatibility.
+
+## Build from source
+
+Use the existing checkout; each cloud task is already isolated and does not need a worktree. Install Node.js 24 and stable Rust, then your system's development libraries.
+
+Ubuntu 24.04:
 
 ```sh
 sudo apt-get update
 sudo apt-get install -y g++-14 gcc-14 cmake ninja-build pkg-config \
   libusb-1.0-0-dev libcrypto++-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
-  librsvg2-dev patchelf
+  librsvg2-dev patchelf rpm
 ```
 
-Install Node.js 24 and stable Rust using their official distributions. Then, from the repository root:
+Arch Linux:
+
+```sh
+sudo pacman -S --needed base-devel cmake ninja pkgconf nodejs npm rust \
+  libusb crypto++ gtk3 webkit2gtk-4.1 librsvg patchelf
+```
+
+From the repository root:
 
 ```sh
 npm ci
+# Ubuntu: use GCC 14 explicitly. On Arch, use the installed GCC >= 14.
 CC=gcc-14 CXX=g++-14 npm run engine:build
 npm run tauri dev
 ```
 
-The engine script fetches pinned upstream revision `b8630fb39624c76cdce0e196c57f7285d63286d3`, disables its Qt GUI, compiles the CLI and runs its existing tests. It places the executable under `src-tauri/binaries/odin4-<host-triple>`, as required by Tauri's sidecar bundler. It refuses to overwrite a modified engine source checkout. Native Odin4 logs are written under the application's platform log directory, not the source tree. Allow enough disk space for both C++ and Rust builds.
+On Arch, replace the engine command with `npm run engine:build`. This fetches pinned upstream revision `b8630fb39624c76cdce0e196c57f7285d63286d3`, compiles the CLI with its Qt interface disabled, runs upstream tests and prepares Tauri's bundled engine. The script refuses to overwrite modified upstream sources.
 
-### USB permissions
-
-Inspect and install the upstream udev rules appropriate to your machine:
-
-```sh
-cat .cache/odin4/udev/60-odin4.rules
-sudo install -m 0644 .cache/odin4/udev/60-odin4.rules /etc/udev/rules.d/60-odin4.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-```
-
-Reconnect your device, in Samsung Download Mode. Follow upstream group/session requirements if present. Run the GUI as a normal user. Close other flash tools claiming the USB interface. The app does not silently elevate privileges or install system rules.
-
-### Checks and packaging
+### Checks and installers
 
 ```sh
 npm run build
 cargo test --manifest-path scripts/core-tests/Cargo.toml --locked
-# After building the engine and installing native packages:
 cargo test --manifest-path src-tauri/Cargo.toml --locked
-npm run tauri build
+npm run tauri -- build -- --locked
 ```
 
-The `.deb` is produced under `src-tauri/target/release/bundle/deb/`. The engine is bundled alongside the app, with the upstream Apache-2.0 license and NOTICE. USB udev rules must be installed separately. Architecture support depends on building the matching native engine; x86_64 and aarch64 GNU/Linux executable names are supported.
+Packages are placed in `src-tauri/target/release/bundle/`. The engine's Apache-2.0 license and NOTICE are included. UI automation uses Chromium with a mocked native bridge; start `npm run dev` in a separate terminal and run `npm test`. This checks UI behavior, not physical USB hardware.
 
-### Browser preview and smoke checks
-
-```sh
-npm run dev
-# In another terminal, with Chromium installed:
-npm test
-```
-
-`CHROMIUM_PATH` can override `/usr/bin/chromium`; `APP_URL` can override the local test origin. Browser checks cover real preview interactions and mocked desktop command flows, not USB hardware. A static host such as Vercel can show this preview but cannot run the desktop backend.
-
-## Device use
-
-1. Back up data; select firmware for the exact device model and bootloader revision.
-2. Put the phone in Download Mode and scan for it.
-3. Select matching firmware packages and run Validate firmware.
-4. Review the log, then explicitly confirm flashing.
-5. Keep the app open, computer awake and USB connected until the engine finishes.
-
-There is deliberately no mid-flash cancellation control. Firmware writes can erase data or make a device unbootable; validation cannot guarantee that every firmware/model combination is safe. A `.tar.md5` checksum is an integrity check, not proof of authenticity. This GUI relies on upstream Odin4's protocol and validation behavior; it does not implement independent Samsung model compatibility checks.
+The GitHub Actions workflow builds `.deb`, `.rpm` and AppImage, launches the installed Debian app and its bundled engine under a virtual display, repackages and checks the Arch installation, and creates checksums. A version tag such as `v0.1.1` publishes the packages only after these jobs pass. Regular pushes build artifacts without publishing a release.

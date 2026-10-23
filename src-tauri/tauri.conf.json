@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Odin Desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "dev.odin.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -26,7 +26,9 @@
   "bundle": {
     "active": true,
     "targets": [
-      "deb"
+      "deb",
+      "rpm",
+      "appimage"
     ],
     "externalBin": [
       "binaries/odin4"
@@ -36,8 +38,21 @@
         "depends": [
           "libusb-1.0-0",
           "libwebkit2gtk-4.1-0",
-          "libgtk-3-0"
-        ]
+          "libgtk-3-0t64"
+        ],
+        "files": {
+          "/usr/lib/udev/rules.d/60-odin-desktop.rules": "../packaging/udev/60-odin-desktop.rules"
+        }
+      },
+      "rpm": {
+        "depends": [
+          "libusb1",
+          "webkit2gtk4.1",
+          "gtk3"
+        ],
+        "files": {
+          "/usr/lib/udev/rules.d/60-odin-desktop.rules": "../packaging/udev/60-odin-desktop.rules"
+        }
       }
     },
     "icon": [
@@ -46,6 +61,9 @@
     "resources": [
       "binaries/ODIN4-LICENSE",
       "binaries/ODIN4-NOTICE"
-    ]
+    ],
+    "shortDescription": "Samsung firmware flashing desktop application",
+    "longDescription": "A native Linux desktop interface for Odin4 with local USB access, firmware validation and operation logs.",
+    "category": "Utility"
   }
 }

@@ -1,8 +1,12 @@
-name: Linux desktop
+name: Linux desktop release
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -16,16 +20,96 @@ jobs:
       - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++-14 cmake ninja-build pkg-config libusb-1.0-0-dev libcrypto++-dev libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf
+          sudo apt-get install -y g++-14 gcc-14 cmake ninja-build pkg-config libusb-1.0-0-dev libcrypto++-dev libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf rpm libfuse2t64 xvfb dbus-x11
       - run: npm ci
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node scripts/check-release.mjs "$GITHUB_REF_NAME"
       - run: cargo test --manifest-path scripts/core-tests/Cargo.toml --locked
       - run: npm run engine:build
         env:
           CXX: g++-14
           CC: gcc-14
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
-      - run: npm run tauri build
+      - name: Build desktop packages
+        run: npm run tauri -- build -- --locked
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
+      - name: Test packaged application and engine
+        run: |
+          mkdir -p /tmp/odin-package
+          dpkg-deb -x src-tauri/target/release/bundle/deb/*.deb /tmp/odin-package
+          test -f /tmp/odin-package/usr/lib/udev/rules.d/60-odin-desktop.rules
+          /tmp/odin-package/usr/bin/odin4 -v
+          xvfb-run -a dbus-run-session -- /tmp/odin-package/usr/bin/odin-desktop --smoke-test
+      - name: Collect release files
+        run: |
+          mkdir release-assets
+          version=$(node -p "require('./package.json').version")
+          cp src-tauri/target/release/bundle/deb/*.deb "release-assets/odin-desktop_${version}_amd64.deb"
+          cp src-tauri/target/release/bundle/rpm/*.rpm "release-assets/odin-desktop-${version}-1.x86_64.rpm"
+          cp src-tauri/target/release/bundle/appimage/*.AppImage "release-assets/odin-desktop-${version}-x86_64.AppImage"
+          cp packaging/udev/60-odin-desktop.rules release-assets/
       - uses: actions/upload-artifact@v4
         with:
-          name: odin-desktop-linux
-          path: src-tauri/target/release/bundle/deb/*.deb
+          name: linux-packages
+          path: release-assets/*
+          if-no-files-found: error
+  arch:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: release-assets
+      - name: Prepare checked Arch source
+        run: |
+          version=$(node -p "require('./package.json').version")
+          cp "release-assets/odin-desktop_${version}_amd64.deb" packaging/arch/
+          checksum=$(sha256sum "packaging/arch/odin-desktop_${version}_amd64.deb" | cut -d ' ' -f 1)
+          sed -i "s/RELEASE_DEB_SHA256/$checksum/" packaging/arch/PKGBUILD
+      - name: Build native Arch package
+        run: |
+          docker run --rm -v "$PWD/packaging/arch:/work" archlinux:base-devel bash -euc '
+            pacman -Syu --noconfirm
+            useradd -m builder
+            chown -R builder:builder /work
+            su builder -c "cd /work && makepkg --nodeps --noconfirm"
+            pacman -S --noconfirm gtk3 webkit2gtk-4.1 libusb glib2 libsoup3 hicolor-icon-theme xorg-server-xvfb xorg-xauth dbus
+            pacman -U --noconfirm /work/*.pkg.tar.zst
+            /usr/bin/odin4 -v
+            su builder -c "xvfb-run -a dbus-run-session -- /usr/bin/odin-desktop --smoke-test"
+          '
+      - name: Collect Arch package and recipe
+        run: |
+          cp packaging/arch/*.pkg.tar.zst release-assets/
+          cp packaging/arch/PKGBUILD release-assets/PKGBUILD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: |
+            release-assets/*.pkg.tar.zst
+            release-assets/PKGBUILD
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, arch]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum -- * > SHA256SUMS
+      - name: Publish Linux prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --prerelease --title "Odin Desktop $GITHUB_REF_NAME · Linux" --notes-file packaging/RELEASE-NOTES.md

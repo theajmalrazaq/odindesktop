@@ -167,6 +167,28 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Shared::default())
+        .setup(|app| {
+            if std::env::args().any(|arg| arg == "--smoke-test") {
+                // Exercise the installed GTK/WebKit app and bundled engine without writing to USB.
+                let result = (|| -> Result<(), String> {
+                    for flag in ["-v", "-l"] {
+                        let status = command(app.handle())?
+                            .arg(flag)
+                            .status()
+                            .map_err(|e| e.to_string())?;
+                        if !status.success() {
+                            return Err(format!("Engine smoke check failed: {flag}"));
+                        }
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = &result {
+                    eprintln!("{error}");
+                }
+                app.handle().exit(if result.is_ok() { 0 } else { 1 });
+            }
+            Ok(())
+        })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.state::<Shared>();
